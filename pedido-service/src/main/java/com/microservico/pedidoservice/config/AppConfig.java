@@ -1,8 +1,13 @@
 package com.microservico.pedidoservice.config;
-
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.client.RestTemplate;
 
 @Configuration
 public class AppConfig {
-    // Aqui você pode configurar beans adicionais, como ModelMapper, CORS, etc.
+
+    @Bean
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
 }

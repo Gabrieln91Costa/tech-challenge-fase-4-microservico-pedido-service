@@ -1,24 +1,32 @@
 package com.microservico.pedidoservice.domain.model;
 
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.mapping.Document;
-import lombok.*;
-
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
-@Document(collection = "itens_pedido")  // MongoDB usa coleções, não tabelas
 public class ItemPedido {
 
-    @Id
-    private String id;  // ID como String para MongoDB
+    private String sku;
+    private Integer quantidade;
+    private Double precoUnitario;
 
-    private String sku;  // SKU do item
+    public String getSku() {
+        return sku;
+    }
 
-    private Integer quantidade;  // Quantidade do item no pedido
+    public void setSku(String sku) {
+        this.sku = sku;
+    }
 
-    private Double precoUnitario;  // Preço unitário do item
+    public Integer getQuantidade() {
+        return quantidade;
+    }
 
-    private String pedidoId;  // Referência ao ID do pedido (em vez de @DBRef, usamos o ID como String)
+    public void setQuantidade(Integer quantidade) {
+        this.quantidade = quantidade;
+    }
+
+    public Double getPrecoUnitario() {
+        return precoUnitario;
+    }
+
+    public void setPrecoUnitario(Double precoUnitario) {
+        this.precoUnitario = precoUnitario;
+    }
 }

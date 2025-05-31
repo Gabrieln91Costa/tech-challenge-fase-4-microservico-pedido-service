@@ -9,15 +9,9 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 
 @Repository
-public interface PedidoRepository extends MongoRepository<Pedido, String> {  // Alterando de Long para String para MongoDB
-
-    // Corrigido para buscar por cpfCliente, que é o campo correto na entidade Pedido
+public interface PedidoRepository extends MongoRepository<Pedido, String> {
     List<Pedido> findByCpfCliente(String cpfCliente);
-
-    // Consulta para buscar pedidos pelo status
     List<Pedido> findByStatus(String status);
-
-    // Consulta personalizada para encontrar pedidos com um item que tem o SKU especificado
-    @Query("{ 'itens.sku' : ?0 }")  // Ajustando a consulta para MongoDB
+    @Query("{ 'itens.sku' : ?0 }")
     List<Pedido> findBySku(String sku);
 }

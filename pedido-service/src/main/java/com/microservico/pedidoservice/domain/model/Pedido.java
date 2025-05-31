@@ -2,31 +2,69 @@ package com.microservico.pedidoservice.domain.model;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
-import lombok.*;
 
-import java.util.ArrayList;
 import java.util.List;
 
-@Getter
-@Setter
-@AllArgsConstructor
-@NoArgsConstructor
-@Document(collection = "pedidos")  // MongoDB usa coleções, não tabelas
+@Document(collection = "pedidos")
 public class Pedido {
 
     @Id
-    private String id;  // ID como String para MongoDB
+    private String id;
+    private String cpfCliente;
+    private String numeroCartao;
+    private Double valorTotal;
+    private StatusPedido status;
 
-    private String cpfCliente;  // Cliente associado ao pedido, por CPF (ou outra identificação)
+    // Lista de itens embutida no pedido
+    private List<ItemPedido> itens;
 
-    private String numeroCartao;  // Número do cartão utilizado para o pedido
+    // Getters e Setters
 
-    private StatusPedido status;  // Status do pedido (ex: PENDENTE, FINALIZADO)
+    public String getId() {
+        return id;
+    }
 
-    private Double valorTotal;  // Valor total do pedido
+    public void setId(String id) {
+        this.id = id;
+    }
 
-    private List<String> itensIds = new ArrayList<>();  // Lista de IDs dos itens do pedido (em vez de @DBRef)
+    public String getCpfCliente() {
+        return cpfCliente;
+    }
 
-    // Método que retorna os itens baseados nos IDs
-    // Agora, o método getItens será implementado diretamente no PedidoService
+    public void setCpfCliente(String cpfCliente) {
+        this.cpfCliente = cpfCliente;
+    }
+
+    public String getNumeroCartao() {
+        return numeroCartao;
+    }
+
+    public void setNumeroCartao(String numeroCartao) {
+        this.numeroCartao = numeroCartao;
+    }
+
+    public Double getValorTotal() {
+        return valorTotal;
+    }
+
+    public void setValorTotal(Double valorTotal) {
+        this.valorTotal = valorTotal;
+    }
+
+    public StatusPedido getStatus() {
+        return status;
+    }
+
+    public void setStatus(StatusPedido status) {
+        this.status = status;
+    }
+
+    public List<ItemPedido> getItens() {
+        return itens;
+    }
+
+    public void setItens(List<ItemPedido> itens) {
+        this.itens = itens;
+    }
 }

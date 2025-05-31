@@ -1,15 +1,14 @@
 package com.microservico.pedidoservice.application.service;
 
-import com.microservico.pedidoservice.application.usecase.CriarPedido;
-import com.microservico.pedidoservice.application.usecase.BuscarPedido;
 import com.microservico.pedidoservice.application.usecase.AtualizarPedido;
-import com.microservico.pedidoservice.domain.model.Pedido;
+import com.microservico.pedidoservice.application.usecase.BuscarPedido;
+import com.microservico.pedidoservice.application.usecase.CriarPedido;
+import com.microservico.pedidoservice.domain.dto.ItemRequestDTO;
+import com.microservico.pedidoservice.domain.dto.PedidoRequestDTO;
 import com.microservico.pedidoservice.domain.model.ItemPedido;
+import com.microservico.pedidoservice.domain.model.Pedido;
 import com.microservico.pedidoservice.domain.model.StatusPedido;
-import com.microservico.pedidoservice.domain.model.dto.ItemRequestDTO;
-import com.microservico.pedidoservice.domain.model.dto.PedidoRequestDTO;
 import com.microservico.pedidoservice.domain.repository.PedidoRepository;
-import com.microservico.pedidoservice.domain.repository.ItemPedidoRepository; // Importando repositório de itens
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -26,43 +25,66 @@ public class PedidoService implements CriarPedido, BuscarPedido, AtualizarPedido
     private PedidoRepository pedidoRepository;
 
     @Autowired
-    private ItemPedidoRepository itemRepository;  // Repositório para acessar os itens
-
-    @Autowired
     private RestTemplate restTemplate;
 
-    private final String estoqueServiceUrl = "http://estoqueservice:8080/estoque";  // URL do serviço de estoque
+    private final String estoqueServiceUrl = "http://estoqueservice:8080/estoque";
 
     @Override
     public Pedido criarPedido(Pedido pedido) {
-        // Verificar disponibilidade no estoque para cada item do pedido
-        for (String itemId : pedido.getItensIds()) {
-            // Buscar o item pelo ID
-            Optional<ItemPedido> item = itemRepository.findById(itemId);
-            if (item.isPresent()) {
-                ResponseEntity<Void> estoqueResponse = restTemplate.getForEntity(estoqueServiceUrl + "/" + item.get().getSku(), Void.class);
-                if (estoqueResponse.getStatusCode().is4xxClientError()) {
-                    throw new RuntimeException("Produto com SKU " + item.get().getSku() + " não encontrado no estoque.");
-                }
-            } else {
-                throw new RuntimeException("Item com ID " + itemId + " não encontrado.");
+        for (ItemPedido item : pedido.getItens()) {
+            ResponseEntity<Void> estoqueResponse = restTemplate.getForEntity(
+                    estoqueServiceUrl + "/" + item.getSku(), Void.class
+            );
+
+            if (estoqueResponse.getStatusCode().is4xxClientError()) {
+                throw new RuntimeException("Produto com SKU " + item.getSku() + " não encontrado no estoque.");
             }
         }
 
-        // Definir o status do pedido como "ABERTO"
         pedido.setStatus(StatusPedido.ABERTO);
 
-        // Baixar estoque para os itens
-        for (String itemId : pedido.getItensIds()) {
-            Optional<ItemPedido> item = itemRepository.findById(itemId);
-            item.ifPresent(i -> {
-                String urlBaixarEstoque = estoqueServiceUrl + "/" + i.getSku() + "/baixar?quantidade=" + i.getQuantidade();
-                restTemplate.put(urlBaixarEstoque, null);
-            });
+        for (ItemPedido item : pedido.getItens()) {
+            String urlBaixar = estoqueServiceUrl + "/" + item.getSku() + "/baixar?quantidade=" + item.getQuantidade();
+            restTemplate.put(urlBaixar, null);
         }
 
-        // Remove referências circulares e salva o pedido
-        pedido.getItensIds().clear(); // Limpa a lista de IDs dos itens antes de salvar
+        return pedidoRepository.save(pedido);
+    }
+
+    public Pedido processarPedido(PedidoRequestDTO pedidoRequestDTO) {
+        Pedido pedido = new Pedido();
+        pedido.setCpfCliente(pedidoRequestDTO.getCpfCliente());
+        pedido.setNumeroCartao(pedidoRequestDTO.getNumeroCartao());
+        pedido.setValorTotal(pedidoRequestDTO.getValorTotal());
+
+        List<ItemPedido> itens = new ArrayList<>();
+        for (ItemRequestDTO itemDTO : pedidoRequestDTO.getItens()) {
+            ItemPedido item = new ItemPedido();
+            item.setSku(itemDTO.getSku());
+            item.setQuantidade(itemDTO.getQuantidade());
+            item.setPrecoUnitario(itemDTO.getPrecoUnitario());
+            itens.add(item);
+        }
+
+        pedido.setItens(itens);
+        pedido.setStatus(StatusPedido.ABERTO);
+        return criarPedido(pedido);
+    }
+
+    public Pedido estornarPedido(String id) {
+        Pedido pedido = pedidoRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Pedido não encontrado"));
+
+        if (pedido.getStatus() == StatusPedido.FECHADO_SEM_ESTOQUE
+                || pedido.getStatus() == StatusPedido.FECHADO_SEM_CREDITO) {
+
+            for (ItemPedido item : pedido.getItens()) {
+                String urlRepor = estoqueServiceUrl + "/" + item.getSku() + "/repor";
+                restTemplate.put(urlRepor, null);
+            }
+        }
+
+        pedido.setStatus(StatusPedido.CANCELADO);
         return pedidoRepository.save(pedido);
     }
 
@@ -72,68 +94,37 @@ public class PedidoService implements CriarPedido, BuscarPedido, AtualizarPedido
     }
 
     @Override
+    public List<Pedido> porSku(String sku) {
+        return pedidoRepository.findBySku(sku);
+    }
+
+    @Override
     public List<Pedido> listarPedidos() {
         return pedidoRepository.findAll();
     }
 
     @Override
-    public Pedido atualizarPedido(String id, Pedido pedidoAtualizado) {
+    public Pedido atualizarPedido(String id, PedidoRequestDTO pedidoRequestDTO) {
         Pedido pedidoExistente = pedidoRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Pedido não encontrado"));
 
-        pedidoExistente.setStatus(pedidoAtualizado.getStatus());
+        // Atualiza os campos conforme a necessidade
+        pedidoExistente.setCpfCliente(pedidoRequestDTO.getCpfCliente());
+        pedidoExistente.setNumeroCartao(pedidoRequestDTO.getNumeroCartao());
+        pedidoExistente.setValorTotal(pedidoRequestDTO.getValorTotal());
+
+        // Atualização dos itens
+        List<ItemPedido> itensAtualizados = new ArrayList<>();
+        for (ItemRequestDTO itemDTO : pedidoRequestDTO.getItens()) {
+            ItemPedido item = new ItemPedido();
+            item.setSku(itemDTO.getSku());
+            item.setQuantidade(itemDTO.getQuantidade());
+            item.setPrecoUnitario(itemDTO.getPrecoUnitario());
+            itensAtualizados.add(item);
+        }
+        pedidoExistente.setItens(itensAtualizados);
+
         return pedidoRepository.save(pedidoExistente);
     }
 
-    @Override
-    public Optional<Pedido> porSku(String sku) {
-        // Alteração para buscar pedido por SKU
-        return pedidoRepository.findBySku(sku).stream().findFirst();
-    }
-
-    // Método para processar o pedido a partir de um DTO
-    public Pedido processarPedido(PedidoRequestDTO pedidoRequestDTO) {
-        Pedido pedido = new Pedido();
-
-        pedido.setCpfCliente(pedidoRequestDTO.getCpfCliente());
-        pedido.setNumeroCartao(pedidoRequestDTO.getNumeroCartao());
-        pedido.setValorTotal(pedidoRequestDTO.getValorTotal());
-
-        List<String> itensIds = new ArrayList<>();
-        for (ItemRequestDTO itemRequestDTO : pedidoRequestDTO.getItens()) {
-            // Criar um novo item e adicionar seu ID na lista de itensIds
-            ItemPedido item = new ItemPedido();
-            item.setSku(itemRequestDTO.getSku());
-            item.setQuantidade(itemRequestDTO.getQuantidade());
-            item.setPrecoUnitario(itemRequestDTO.getPrecoUnitario());
-
-            // Salvar item e pegar o ID gerado
-            ItemPedido savedItem = itemRepository.save(item);
-            itensIds.add(savedItem.getId());  // Armazenar o ID do item no pedido
-        }
-
-        pedido.setItensIds(itensIds);
-        pedido.setStatus(StatusPedido.ABERTO);
-
-        return criarPedido(pedido);
-    }
-
-    // Método para estornar um pedido, repondo o estoque
-    public Pedido estornarPedido(String id) {
-        Pedido pedido = pedidoRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Pedido não encontrado"));
-
-        if (pedido.getStatus() == StatusPedido.FECHADO_SEM_ESTOQUE || pedido.getStatus() == StatusPedido.FECHADO_SEM_CREDITO) {
-            for (String itemId : pedido.getItensIds()) {
-                Optional<ItemPedido> item = itemRepository.findById(itemId);
-                item.ifPresent(i -> {
-                    String urlReporEstoque = estoqueServiceUrl + "/" + i.getSku() + "/repor";
-                    restTemplate.put(urlReporEstoque, null);
-                });
-            }
-        }
-
-        pedido.setStatus(StatusPedido.FECHADO_SEM_CREDITO);
-        return pedidoRepository.save(pedido);
-    }
 }
