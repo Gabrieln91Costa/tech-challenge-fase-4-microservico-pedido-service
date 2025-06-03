@@ -1,5 +1,6 @@
 package com.microservico.pedidoservice.domain.model;
 
+
 public enum StatusPedido {
     ABERTO,
     FECHADO_COM_SUCESSO,
