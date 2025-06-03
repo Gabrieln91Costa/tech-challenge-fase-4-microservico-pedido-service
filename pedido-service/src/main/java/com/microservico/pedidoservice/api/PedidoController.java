@@ -20,8 +20,13 @@ public class PedidoController {
 
     @PostMapping
     public ResponseEntity<Pedido> criarPedido(@Validated @RequestBody PedidoRequestDTO pedidoRequestDTO) {
-        Pedido pedidoCriado = pedidoService.processarPedido(pedidoRequestDTO);
-        return ResponseEntity.ok(pedidoCriado);
+        try {
+            Pedido pedidoCriado = pedidoService.criarEProcessarPagamento(pedidoRequestDTO);
+            return ResponseEntity.ok(pedidoCriado);
+        } catch (Exception e) {
+            // Pode retornar um erro mais específico se quiser (ex: 400 ou 500)
+            return ResponseEntity.badRequest().build();
+        }
     }
 
     @GetMapping("/{id}")
@@ -38,7 +43,11 @@ public class PedidoController {
 
     @PutMapping("/{id}")
     public ResponseEntity<Pedido> atualizarPedido(@PathVariable String id, @Validated @RequestBody PedidoRequestDTO pedidoRequestDTO) {
-        Pedido pedidoAtualizado = pedidoService.atualizarPedido(id, pedidoRequestDTO);
-        return ResponseEntity.ok(pedidoAtualizado);
+        try {
+            Pedido pedidoAtualizado = pedidoService.atualizarPedido(id, pedidoRequestDTO);
+            return ResponseEntity.ok(pedidoAtualizado);
+        } catch (Exception e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 }

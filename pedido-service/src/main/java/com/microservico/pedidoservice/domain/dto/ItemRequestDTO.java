@@ -49,4 +49,12 @@ public class ItemRequestDTO {
     public void setPrecoUnitario(Double precoUnitario) {
         this.precoUnitario = precoUnitario;
     }
+
+    // Método auxiliar para conversão opcional (se desejar gerar ItemPagamentoDTO a partir deste)
+    public ItemPagamentoDTO toItemPagamentoDTO() {
+        ItemPagamentoDTO dto = new ItemPagamentoDTO();
+        dto.setSku(this.sku);
+        dto.setQuantidade(this.quantidade);
+        return dto;
+    }
 }

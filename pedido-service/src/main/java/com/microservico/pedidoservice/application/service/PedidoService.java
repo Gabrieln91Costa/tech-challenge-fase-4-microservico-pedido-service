@@ -3,8 +3,7 @@ package com.microservico.pedidoservice.application.service;
 import com.microservico.pedidoservice.application.usecase.AtualizarPedido;
 import com.microservico.pedidoservice.application.usecase.BuscarPedido;
 import com.microservico.pedidoservice.application.usecase.CriarPedido;
-import com.microservico.pedidoservice.domain.dto.ItemRequestDTO;
-import com.microservico.pedidoservice.domain.dto.PedidoRequestDTO;
+import com.microservico.pedidoservice.domain.dto.*;
 import com.microservico.pedidoservice.domain.model.ItemPedido;
 import com.microservico.pedidoservice.domain.model.Pedido;
 import com.microservico.pedidoservice.domain.model.StatusPedido;
@@ -17,6 +16,7 @@ import org.springframework.web.client.RestTemplate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @Service
 public class PedidoService implements CriarPedido, BuscarPedido, AtualizarPedido {
@@ -28,6 +28,7 @@ public class PedidoService implements CriarPedido, BuscarPedido, AtualizarPedido
     private RestTemplate restTemplate;
 
     private final String estoqueServiceUrl = "http://estoqueservice:8080/estoque";
+    private final String pagamentoServiceUrl = "http://pagamentoservice:8080/pagamentos";
 
     @Override
     public Pedido criarPedido(Pedido pedido) {
@@ -51,7 +52,8 @@ public class PedidoService implements CriarPedido, BuscarPedido, AtualizarPedido
         return pedidoRepository.save(pedido);
     }
 
-    public Pedido processarPedido(PedidoRequestDTO pedidoRequestDTO) {
+    public Pedido criarEProcessarPagamento(PedidoRequestDTO pedidoRequestDTO) {
+        // 1. Cria o pedido
         Pedido pedido = new Pedido();
         pedido.setCpfCliente(pedidoRequestDTO.getCpfCliente());
         pedido.setNumeroCartao(pedidoRequestDTO.getNumeroCartao());
@@ -68,7 +70,58 @@ public class PedidoService implements CriarPedido, BuscarPedido, AtualizarPedido
 
         pedido.setItens(itens);
         pedido.setStatus(StatusPedido.ABERTO);
-        return criarPedido(pedido);
+        pedido = pedidoRepository.save(pedido);
+
+        // 2. Prepara DTO de pagamento
+        PagamentoDTO pagamentoDTO = new PagamentoDTO();
+        pagamentoDTO.setCpfCliente(pedido.getCpfCliente());
+        pagamentoDTO.setNumeroCartao(pedido.getNumeroCartao());
+        pagamentoDTO.setValorTotal(pedido.getValorTotal());
+
+        List<ItemPagamentoDTO> itensPagamento = pedido.getItens().stream().map(item -> {
+            ItemPagamentoDTO dto = new ItemPagamentoDTO();
+            dto.setSku(item.getSku());
+            dto.setQuantidade(item.getQuantidade());
+            return dto;
+        }).collect(Collectors.toList());
+
+        pagamentoDTO.setItens(itensPagamento);
+
+        // 3. Envia solicitação de pagamento
+        try {
+            ResponseEntity<String> pagamentoResponse = restTemplate.postForEntity(
+                    pagamentoServiceUrl,
+                    pagamentoDTO,
+                    String.class
+            );
+
+            if (pagamentoResponse.getStatusCode().is2xxSuccessful()) {
+                // Pagamento OK - baixa estoque
+                for (ItemPedido item : pedido.getItens()) {
+                    ResponseEntity<Void> estoqueResponse = restTemplate.getForEntity(
+                            estoqueServiceUrl + "/" + item.getSku(), Void.class
+                    );
+
+                    if (estoqueResponse.getStatusCode().is4xxClientError()) {
+                        throw new RuntimeException("Produto com SKU " + item.getSku() + " não encontrado no estoque.");
+                    }
+                }
+
+                for (ItemPedido item : pedido.getItens()) {
+                    String urlBaixar = estoqueServiceUrl + "/" + item.getSku() + "/baixar?quantidade=" + item.getQuantidade();
+                    restTemplate.put(urlBaixar, null);
+                }
+
+                pedido.setStatus(StatusPedido.FECHADO_COM_SUCESSO); // ✅ Ajuste: pedido fechado após sucesso
+            } else {
+                pedido.setStatus(StatusPedido.FECHADO_SEM_CREDITO); // ❌ Pagamento recusado
+            }
+
+        } catch (Exception e) {
+            pedido.setStatus(StatusPedido.FECHADO_SEM_CREDITO); // ❌ Erro no pagamento
+        }
+
+        return pedidoRepository.save(pedido);
     }
 
     public Pedido estornarPedido(String id) {
@@ -108,12 +161,10 @@ public class PedidoService implements CriarPedido, BuscarPedido, AtualizarPedido
         Pedido pedidoExistente = pedidoRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Pedido não encontrado"));
 
-        // Atualiza os campos conforme a necessidade
         pedidoExistente.setCpfCliente(pedidoRequestDTO.getCpfCliente());
         pedidoExistente.setNumeroCartao(pedidoRequestDTO.getNumeroCartao());
         pedidoExistente.setValorTotal(pedidoRequestDTO.getValorTotal());
 
-        // Atualização dos itens
         List<ItemPedido> itensAtualizados = new ArrayList<>();
         for (ItemRequestDTO itemDTO : pedidoRequestDTO.getItens()) {
             ItemPedido item = new ItemPedido();
@@ -126,5 +177,4 @@ public class PedidoService implements CriarPedido, BuscarPedido, AtualizarPedido
 
         return pedidoRepository.save(pedidoExistente);
     }
-
 }
